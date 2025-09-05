@@ -127,39 +127,45 @@ class Camera:
         for buffer in self.data_stream.AnnouncedBuffers():
             self.data_stream.RevokeBuffer(buffer)
 
-
-    def get_live_frame(self, timeout_ms=1):
+    
+    def get_live_frame(self, timeout_ms=0, fallback_ms=1000):
         """
-        Return the most recent finished frame for live view.
-        Drains any currently-finished buffers (discarding older frames),
-        copies the newest image, and re-queues all drained buffers.
+        Return the most recent finished frame already available.
+        Drains ready buffers, keeps only the newest one, copies once.
+        If none are ready, block for exactly one fresh frame.
         """
-        last_img = None
+        last_buf = None
 
-        # Drain everything that's immediately ready; keep only the newest copy
+        # Drain any ready buffers; keep only the newest unqueued
         while True:
             try:
-                buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-                try:
-                    last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-                finally:
-                    # Always re-queue to avoid starving the stream
-                    self.data_stream.QueueBuffer(buffer)
-                # loop again with short timeout to see if an even newer one is ready
-                continue
+                buf = self.data_stream.WaitForFinishedBuffer(timeout_ms)
+                if buf is None:
+                    break
+                if last_buf is not None:
+                    self.data_stream.QueueBuffer(last_buf)
+                last_buf = buf
             except Exception:
-                # No more finished buffers within timeout_ms
                 break
 
-        # If nothing was ready, block briefly to fetch at least one fresh frame
-        if last_img is None:
-            
-            buffer = self.data_stream.WaitForFinishedBuffer(max(timeout_ms, 1000))
+        if last_buf is not None:
             try:
-                last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+                img = numpy.copy(ids_peak_ipl_extension.BufferToImage(last_buf).get_numpy())
             finally:
-                self.data_stream.QueueBuffer(buffer)
-        return last_img
+                self.data_stream.QueueBuffer(last_buf)
+            return img
+
+        # Nothing ready: block for one fresh buffer
+        buf = self.data_stream.WaitForFinishedBuffer(max(fallback_ms, 1))
+        if buf is None:
+            raise TimeoutError("No frame available")
+        try:
+            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buf).get_numpy())
+        finally:
+            self.data_stream.QueueBuffer(buf)
+        return img
+
+            
     
 
     def get_frame(self, timeout_ms=1000):
@@ -173,7 +179,7 @@ class Camera:
     def get_last_frame(self, timeout_ms=1000):
         buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
         indexes = []
-        buffers= self.data_stream.AnnouncedBuffers()
+        buffers= self.data_stream.AnnouncedBuffers() #AnnouncedBuffers() includes buffers in various states (queued, filling, finished). The “max FrameID” buffer might not be finished 
         for buf in self.data_stream.AnnouncedBuffers():
             indexes.append(buf.FrameID())
         ids_image = ids_peak_ipl_extension.BufferToImage(buffers[int(numpy.argmax(numpy.asarray(indexes)))])
