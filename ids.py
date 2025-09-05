@@ -131,29 +131,35 @@ class Camera:
             return numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
         finally:
             self.data_stream.QueueBuffer(buffer)
-        return img
 
-    def get_last_frame(self, timeout_ms=1):
-        """Get the most recent finished buffer by draining the queue quickly."""
+
+    def get_live_frame(self, timeout_ms=1):
+        """Get the most recent finished buffer by draining the queue quickly. To be used for live imaging"""
+        
         last_img = None
         while True:
             try:
                 buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-                try:
-                    last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-                finally:
-                    self.data_stream.QueueBuffer(buffer)
-                # loop again to see if a newer one is already ready
+                last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+                self.data_stream.QueueBuffer(buffer)
             except Exception:
                 break
+        
         if last_img is None:
+            print('collecting image with 1s timeout')
             # fall back to a normal wait
             buffer = self.data_stream.WaitForFinishedBuffer(max(timeout_ms, 1000))
             try:
-                return numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+                last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
             finally:
                 self.data_stream.QueueBuffer(buffer)
+        
         return last_img
+    
+
+    def get_last_frame(self, timeout_ms=1000):
+        pass # TODO write function to real the last frame collected by the camera 
+    
     
     def get_multiple_frames(self, nframes, timeout_ms=1000):
         for _ in range(nframes):
@@ -164,147 +170,6 @@ class Camera:
             finally:
                 self.data_stream.QueueBuffer(buffer)
     
-    def enable_frame_event_timestamps(self):
-        nm = self.remote_nodemap
-        for ev in ("FrameStart", "ExposureStart", "ExposureEnd"):
-            try:
-                nm.FindNode("EventSelector").SetCurrentEntry(ev)
-                nm.FindNode("EventNotification").SetCurrentEntry("On")
-            except Exception:
-                pass  # skip if not supported on your model
-
-
-    def get_multiple_frames_with_device_ts(self, nframes, timeout_ms=1000, prefer_event="FrameStart"):
-        """
-        Yield (img, ts_ns, frame_id, ts_source) for nframes.
-        Timestamp priority: Buffer TS -> Chunk TS -> Event TS (FrameStart/ExposureStart/ExposureEnd).
-        Automatically enables ChunkMode or Events if available.
-        """
-        nm = self.remote_nodemap
-
-        # --- one-time lazy setup flags (per call) ---
-        tried_enable_chunk = False
-        tried_enable_events = False
-
-        # helpers ---------------------------------------------------------------
-        def _try_buffer_timestamp(buf):
-            # various SDKs expose different names; try a few
-            for name in ("Timestamp", "TimestampNs", "GetTimestamp", "GetTimestampNs"):
-                if hasattr(buf, name):
-                    try:
-                        val = getattr(buf, name)()
-                        return int(val), "buffer"
-                    except Exception:
-                        pass
-            return None, None
-
-        def _try_chunk_timestamp(buf, img_obj):
-            nonlocal tried_enable_chunk
-            # enable ChunkMode (only once)
-            if not tried_enable_chunk:
-                tried_enable_chunk = True
-                try:
-                    nm.FindNode("ChunkModeActive").SetValue(1)
-                    nm.FindNode("ChunkSelector").SetCurrentEntry("Timestamp")
-                    nm.FindNode("ChunkEnable").SetValue(1)
-                    # optional: also enable FrameID chunk if present
-                    try:
-                        nm.FindNode("ChunkSelector").SetCurrentEntry("FrameID")
-                        nm.FindNode("ChunkEnable").SetValue(1)
-                    except Exception:
-                        pass
-                except Exception:
-                    pass  # chunk not supported; we'll just fail over
-
-            # Try on buffer first, then on image object (bindings vary)
-            candidates = [(buf, ("ChunkTimestamp", "GetChunkTimestamp", "Timestamp")),
-                        (img_obj, ("ChunkTimestamp", "GetChunkTimestamp", "Timestamp"))]
-            for obj, names in candidates:
-                for name in names:
-                    if hasattr(obj, name):
-                        try:
-                            val = getattr(obj, name)()
-                            return int(val), "chunk"
-                        except Exception:
-                            pass
-            return None, None
-
-        def _enable_events_once():
-            # turn on events we can use
-            for ev in ("FrameStart", "ExposureStart", "ExposureEnd"):
-                try:
-                    nm.FindNode("EventSelector").SetCurrentEntry(ev)
-                    nm.FindNode("EventNotification").SetCurrentEntry("On")
-                except Exception:
-                    pass
-
-        def _try_event_timestamp(frame_id):
-            nonlocal tried_enable_events
-            if not tried_enable_events:
-                tried_enable_events = True
-                try:
-                    _enable_events_once()
-                except Exception:
-                    pass
-
-            # Which event do you prefer to time-stamp the frame with?
-            order = {
-                "FrameStart": ("EventFrameStartFrameID", "EventFrameStartTimestamp"),
-                "ExposureStart": ("EventExposureStartFrameID", "EventExposureStartTimestamp"),
-                "ExposureEnd": ("EventExposureEndFrameID", "EventExposureEndTimestamp"),
-            }
-            # build preference list with fallbacks
-            pref = [prefer_event] + [k for k in ("FrameStart", "ExposureStart", "ExposureEnd") if k != prefer_event]
-
-            for key in pref:
-                ids_node, ts_node = order[key]
-                try:
-                    eid = nm.FindNode(ids_node).Value()
-                    if int(eid) == int(frame_id):
-                        ts = nm.FindNode(ts_node).Value()
-                        return int(ts), f"event:{key}"
-                except Exception:
-                    continue
-            return None, None
-        # ----------------------------------------------------------------------
-
-        for _ in range(nframes):
-            buf = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-            try:
-                frame_id = None
-                try:
-                    frame_id = buf.FrameID()
-                except Exception:
-                    pass
-
-                # Convert to image (needed for chunk attempts anyway)
-                img_obj = ids_peak_ipl_extension.BufferToImage(buf)
-                img = numpy.copy(img_obj.get_numpy())
-
-                # 1) buffer timestamp
-                ts, src = _try_buffer_timestamp(buf)
-                if ts is not None:
-                    yield img, ts, frame_id, src
-                    continue
-
-                # 2) chunk timestamp
-                ts, src = _try_chunk_timestamp(buf, img_obj)
-                if ts is not None:
-                    yield img, ts, frame_id, src
-                    continue
-
-                # 3) event timestamp (match by FrameID if we got one)
-                if frame_id is not None:
-                    ts, src = _try_event_timestamp(frame_id)
-                    if ts is not None:
-                        yield img, ts, frame_id, src
-                        continue
-
-                # Fallback: no device timestamp found
-                yield img, None, frame_id, "none"
-            finally:
-                self.data_stream.QueueBuffer(buf)
-
 
 
     def set_external_trigger(self, line="Line0", activation="RisingEdge", exposure_mode="Timed"):
@@ -368,24 +233,13 @@ if __name__=="__main__":
     N=100
     
     cam.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry("Continuous")
-    cam.enable_frame_event_timestamps()
     cam.start_acquisition(int(N))
 
+    cam.get_live_frame()
+
     t = time.perf_counter()
-    for frame_idx, (img, ts_ns, fid, src) in enumerate(cam.get_multiple_frames_with_device_ts(N)):
-        #dt = time.perf_counter() - t
-        #print(f"Frame {frame_idx}: shape={img.shape}, Δt={dt:.4f}s")
-        if frame_idx==0:
-            t0=ts_ns
-
-        print(f"#{frame_idx:03d}  fid={fid}  ts={(ts_ns-t0)/1000000} ms  src={src}, shape={img.shape}")
-        #t = time.perf_counter()
-
+    
     cam.stop_acquisition()
-    #cam.stop_acquisition()
-
-    # for node in cam.remote_nodemap.Nodes():
-    #    print(node.Name())
 
     
     cam.close()
