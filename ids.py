@@ -10,8 +10,6 @@ class Camera:
         device_manager = ids_peak.DeviceManager.Instance()
         device_manager.Update()
         self.device = device_manager.Devices()[cam_num].OpenDevice(ids_peak.DeviceAccessType_Control)
-
-
         # Nodemap for accessing GenICam nodes
         self.remote_nodemap = self.device.RemoteDevice().NodeMaps()[0]
         self.data_stream = self.device.DataStreams()[0].OpenDataStream()
@@ -60,10 +58,12 @@ class Camera:
         print(val)
         return val
             
+
     def get_frame_rate(self):
         val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
         print(val)
         return val
+
 
     def set_exposure_ms(self,value):
         value=value*1000
@@ -83,6 +83,7 @@ class Camera:
     def set_gain(self,value):
         self.set_node_value("Gain",value)
 
+
     def set_bit_depth(self,value):
         if value==8:
             self.remote_nodemap.FindNode("PixelFormat").SetCurrentEntry(self.remote_nodemap.FindNode("PixelFormat").Entries()[0])
@@ -100,7 +101,7 @@ class Camera:
         nm.FindNode("AcquisitionFrameCount").SetValue(int(nframes))
 
 
-    def start_acquisition(self, buffersize=0):
+    def start_acquisition(self, buffersize=64):
         nm = self.remote_nodemap
         payload_size = nm.FindNode("PayloadSize").Value()
         min_req = self.data_stream.NumBuffersAnnouncedMinRequired()
@@ -116,6 +117,7 @@ class Camera:
         nm.FindNode("AcquisitionStart").Execute()
         nm.FindNode("AcquisitionStart").WaitUntilDone()
 
+
     def stop_acquisition(self):
         self.remote_nodemap.FindNode("AcquisitionStop").Execute()
         self.remote_nodemap.FindNode("AcquisitionStop").WaitUntilDone()
@@ -125,40 +127,46 @@ class Camera:
         for buffer in self.data_stream.AnnouncedBuffers():
             self.data_stream.RevokeBuffer(buffer)
 
-    def get_frame(self, timeout_ms=1000):
-        buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-        try:
-            return numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-        finally:
-            self.data_stream.QueueBuffer(buffer)
-
 
     def get_live_frame(self, timeout_ms=1):
-        """Get the most recent finished buffer by draining the queue quickly. To be used for live imaging"""
-        
+        """
+        Return the most recent finished frame for live view.
+        Drains any currently-finished buffers (discarding older frames),
+        copies the newest image, and re-queues all drained buffers.
+        """
         last_img = None
+        # Drain everything that's immediately ready; keep only the newest copy
         while True:
             try:
                 buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-                last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-                self.data_stream.QueueBuffer(buffer)
+                try:
+                    last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+                finally:
+                    # Always re-queue to avoid starving the stream
+                    self.data_stream.QueueBuffer(buffer)
+                # loop again with short timeout to see if an even newer one is ready
+                continue
             except Exception:
+                # No more finished buffers within timeout_ms
                 break
-        
+
+        # If nothing was ready, block briefly to fetch at least one fresh frame
         if last_img is None:
-            print('collecting image with 1s timeout')
-            # fall back to a normal wait
             buffer = self.data_stream.WaitForFinishedBuffer(max(timeout_ms, 1000))
             try:
                 last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
             finally:
                 self.data_stream.QueueBuffer(buffer)
-        
         return last_img
     
 
-    def get_last_frame(self, timeout_ms=1000):
-        pass # TODO write function to real the last frame collected by the camera 
+    def get_last_frame(self, timeout_ms=1000):    
+        buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
+        try:
+            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+        finally:
+            self.data_stream.QueueBuffer(buffer)
+        return img
     
     
     def get_multiple_frames(self, nframes, timeout_ms=1000):

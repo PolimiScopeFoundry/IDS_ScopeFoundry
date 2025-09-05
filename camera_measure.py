@@ -154,7 +154,7 @@ class IdsMeasure(Measurement):
             
             while not self.interrupt_measurement_called:
                      
-                self.img = self.image_gen.camera.get_last_frame()
+                self.img = self.image_gen.camera.get_live_frame()
                 
                 if self.interrupt_measurement_called:
                     self.image_gen.camera.stop_acquisition() 
