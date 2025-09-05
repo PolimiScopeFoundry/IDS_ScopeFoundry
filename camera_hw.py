@@ -5,7 +5,7 @@ Created on Mon May 5 16:33:32 2025
 @authors: Andrea Bassi, Yoginder Singh, Politecnico di Milano
 """
 from ScopeFoundry import HardwareComponent
-from ids import Camera
+from ids_library import Camera
 
 class IdsHW(HardwareComponent):
     name = 'IDS'

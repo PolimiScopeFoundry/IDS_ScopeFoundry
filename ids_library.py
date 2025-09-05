@@ -135,6 +135,7 @@ class Camera:
         copies the newest image, and re-queues all drained buffers.
         """
         last_img = None
+
         # Drain everything that's immediately ready; keep only the newest copy
         while True:
             try:
@@ -152,6 +153,7 @@ class Camera:
 
         # If nothing was ready, block briefly to fetch at least one fresh frame
         if last_img is None:
+            
             buffer = self.data_stream.WaitForFinishedBuffer(max(timeout_ms, 1000))
             try:
                 last_img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
@@ -160,23 +162,34 @@ class Camera:
         return last_img
     
 
-    def get_last_frame(self, timeout_ms=1000):    
+    def get_frame(self, timeout_ms=1000):
         buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-        try:
-            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-        finally:
-            self.data_stream.QueueBuffer(buffer)
+        ids_image=ids_peak_ipl_extension.BufferToImage(buffer)
+        img = numpy.copy(ids_image.get_numpy())
+        self.data_stream.QueueBuffer(buffer)
+        return img
+
+
+    def get_last_frame(self, timeout_ms=1000):
+        buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
+        indexes = []
+        buffers= self.data_stream.AnnouncedBuffers()
+        for buf in self.data_stream.AnnouncedBuffers():
+            indexes.append(buf.FrameID())
+        ids_image = ids_peak_ipl_extension.BufferToImage(buffers[int(numpy.argmax(numpy.asarray(indexes)))])
+        img = numpy.copy(ids_image.get_numpy())
+        self.data_stream.QueueBuffer(buffer)
         return img
     
     
     def get_multiple_frames(self, nframes, timeout_ms=1000):
         for _ in range(nframes):
             buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-            try:
-                img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-                yield img
-            finally:
-                self.data_stream.QueueBuffer(buffer)
+            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
+            self.data_stream.QueueBuffer(buffer)
+            yield img
+            
+                
     
 
 
