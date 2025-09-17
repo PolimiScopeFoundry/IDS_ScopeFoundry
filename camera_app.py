@@ -17,7 +17,7 @@ class camera_app(BaseMicroscopeApp):
         print("Adding Hardware Components")
         from camera_hw import IdsHW
         self.add_hardware(IdsHW(self))
-           
+        
         # Add measurement components
         print("Create Measurement objects")
         from camera_measure_with_object_recognition import IdsMeasure
@@ -26,7 +26,7 @@ class camera_app(BaseMicroscopeApp):
 
 if __name__ == '__main__':
     import sys
+    import os
     
     app = camera_app(sys.argv)
-
     sys.exit(app.exec_())
