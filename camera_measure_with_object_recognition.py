@@ -40,10 +40,10 @@ class IdsMeasure(Measurement):
         # All settings are automatically added to the Microscope user interface
 
         self.settings.New('saving_type', dtype=str, initial='None', choices=['None', 'Roi', 'Stack'])
-        self.settings.New('roi_size', dtype=int, initial=60, vmin=2)
-        self.settings.New('min_object_area', dtype=int, initial=100, vmin=1)
-        self.settings.New('max_object_area', dtype=int, initial=4000, vmin=1)
-        self.settings.New('selected_channel', dtype=int, initial=0, vmin=0, vmax=1)
+        self.settings.New('roi_size', dtype=int, initial=200, vmin=2)
+        self.settings.New('min_object_area', dtype=int, initial=250, vmin=1)
+        self.settings.New('max_object_area', dtype=int, initial=10000, vmin=1)
+        self.settings.New('selected_channel', dtype=int, initial=0, vmin=0, vmax=0) #TODO setv max to the max channel number
         
         
         self.settings.New('captured_objects', dtype=int, initial=0, ro=True)
@@ -138,15 +138,14 @@ class IdsMeasure(Measurement):
             width = int(self.screen_width*self.settings['zoom']/100)
             self.ui.setFixedWidth(width)
 
-        
-        
-
-
-
         for indx, cnt in enumerate(im.contours):
             cnt = cnt.squeeze()
             if cnt.ndim == 2 and len(cnt) > 1:
-                curve = pg.PlotCurveItem(cnt[:, 1], cnt[:, 0], pen=pg.mkPen('g', width=0.5))
+                if self.settings['rotate']: 
+                    curve = pg.PlotCurveItem(cnt[:, 0], cnt[:, 1], pen=pg.mkPen('g', width=0.5))
+                else:
+                    curve = pg.PlotCurveItem(cnt[:, 1], cnt[:, 0], pen=pg.mkPen('g', width=0.5))
+                
                 self.imv.getView().addItem(curve)
             
             x = int(im.cx[indx] - roisize//2)
