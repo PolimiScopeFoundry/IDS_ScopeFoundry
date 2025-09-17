@@ -17,8 +17,9 @@ class IdsHW(HardwareComponent):
         self.temperature = self.settings.New(name='temperature', dtype=float, ro=True, unit=chr(176)+'C' )
         self.image_width = self.settings.New(name='image_width', dtype=int, ro=True,unit='px')
         self.image_height = self.settings.New(name='image_height', dtype=int, ro=True,unit='px')
-        self.bit_depth = self.settings.New(name='bit_depth', dtype=int,
-                                                  choices=[8, 10,12], initial = 10, ro=False)
+        self.bit_depth = self.settings.New(name='bit_depth', dtype=str,
+                                                choices=[], initial = '', ro=False,
+                                                reread_from_hardware_after_write=True)
         self.gain = self.settings.New(name='gain', initial=1., dtype=float,
                                       vmax = 1000., vmin = 1., spinbox_step = 1.,
                                       ro=False)
@@ -28,30 +29,47 @@ class IdsHW(HardwareComponent):
         self.exposure_time = self.settings.New(name='exposure_time', initial=100, vmax =5000.,
                                                vmin = 0.01, spinbox_step = 0.1,dtype=float, ro=False, unit='ms',reread_from_hardware_after_write=True)
         self.exposure_mode = self.settings.New(name='exposure_mode', dtype=str,
-                                                  choices=['Timed', 'TriggerControlled'], initial = 'Timed', ro=False)
+                                                choices=['Timed', 'TriggerControlled'], 
+                                                initial = 'Timed', ro=False)
         
+    
+    
+    
+    
+    
+    
+    
     def connect(self):
         # create an instance of the Device
-        self.camera = Camera()      
+        self.camera_device = Camera()
+        
         
         # connect settings to Device methods
-        self.image_width.hardware_read_func = self.camera.get_width
-        self.image_height.hardware_read_func = self.camera.get_height
-        self.bit_depth.hardware_set_func = self.camera.set_bit_depth
-        #self.infos.hardware_read_func = self.camera.get_idname
-        self.exposure_time.hardware_read_func = self.camera.get_exposure_ms
-        self.exposure_time.hardware_set_func = self.camera.set_exposure_ms
-        self.frame_rate.hardware_read_func = self.camera.get_frame_rate
-        self.frame_rate.hardware_set_func = self.camera.set_frame_rate
-        #self.acquisition_mode.hardware_set_func = self.camera.set_acquisitionmode
-        #self.frame_num.hardware_set_func = self.camera.set_framenum
-        self.gain.hardware_set_func = self.camera.set_gain
+        self.image_width.hardware_read_func = self.camera_device.get_width
+        self.image_height.hardware_read_func = self.camera_device.get_height
+        self.bit_depth.hardware_set_func = self.camera_device.set_bit_depth
+        self.bit_depth.hardware_read_func = self.camera_device.get_bit_depth
+        
+        #self.infos.hardware_read_func = self.camera_device.get_idname
+        self.exposure_time.hardware_read_func = self.camera_device.get_exposure_ms
+        self.exposure_time.hardware_set_func = self.camera_device.set_exposure_ms
+        self.frame_rate.hardware_read_func = self.camera_device.get_frame_rate
+        self.frame_rate.hardware_set_func = self.camera_device.set_frame_rate
+        #self.acquisition_mode.hardware_set_func = self.camera_device.set_acquisitionmode
+        #self.frame_num.hardware_set_func = self.camera_device.set_framenum
+        self.gain.hardware_set_func = self.camera_device.set_gain
+
+        available_bit_depths = self.camera_device.get_available_bit_depths()
+        self.bit_depth.add_choices(available_bit_depths) 
+        self.settings['bit_depth'] = available_bit_depths[-1] # set to max bit depth available
+        
+
         self.read_from_hardware()
         
     def disconnect(self):
-        if hasattr(self, 'camera'):
-            self.camera.close() 
-            del self.camera
+        if hasattr(self, 'camera_device'):
+            self.camera_device.close() 
+            del self.camera_device
             
         for lq in self.settings.as_list():
             lq.hardware_read_func = None

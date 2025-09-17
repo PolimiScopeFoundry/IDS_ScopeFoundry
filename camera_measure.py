@@ -40,7 +40,6 @@ class IdsMeasure(Measurement):
         self.settings.New('level_min', dtype=int, initial=60)
         self.settings.New('level_max', dtype=int, initial=4000)
         
-        
         self.image_gen = self.app.hardware['IDS'] 
         
     def setup_figure(self):
@@ -84,10 +83,8 @@ class IdsMeasure(Measurement):
         
         self.settings['progress'] = (self.frame_index +1) * 100/length
         
-        
-        
         if hasattr(self, 'img'):
-            self.imv.setImage(self.img.T,
+            self.imv.setImage(self.img,
                                 autoLevels = self.settings['auto_levels'],
                                 autoRange = self.auto_range.val,
                                 levelMode = 'mono'
@@ -106,7 +103,7 @@ class IdsMeasure(Measurement):
         """
         Acquire frame_num frames and save them in h5 
         """
-        first_frame_acquired = False
+
         frame_num  = self.frame_num.val
         self.frame_index = 0
         #nm = self.image_gen.camera.remote_nodemap
@@ -114,9 +111,13 @@ class IdsMeasure(Measurement):
         #nm.FindNode("AcquisitionMode").SetCurrentEntry("MultiFrame")
         #nm.FindNode("AcquisitionFrameCount").SetValue(int(frame_num)) 
         self.image_gen.camera.start_acquisition()
+
+        self.create_h5_file()
+
         t = time.perf_counter()
 
         for frame_idx, img in enumerate(self.image_gen.camera.get_multiple_frames(frame_num)):
+            
             self.img = img
             
             self.frame_index = frame_idx
@@ -126,17 +127,14 @@ class IdsMeasure(Measurement):
 
             if self.interrupt_measurement_called:
                 break
-            
-            if not first_frame_acquired:
-                self.create_h5_file()
-                first_frame_acquired = True
                     
             self.image_h5[frame_idx,:,:] = img
-            self.h5file.flush()
         
+        self.h5file.flush()
         self.image_gen.camera.stop_acquisition()
         self.h5file.close()
         self.settings['save_h5'] = False
+
     
     def run(self):
         """

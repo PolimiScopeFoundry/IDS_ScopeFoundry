@@ -20,15 +20,13 @@ class camera_app(BaseMicroscopeApp):
            
         # Add measurement components
         print("Create Measurement objects")
-        from camera_measure import IdsMeasure
+        from camera_measure_with_object_recognition import IdsMeasure
         self.add_measurement(IdsMeasure(self))
-
-        #self.ui.show()
-        #self.ui.activateWindow()
 
 
 if __name__ == '__main__':
     import sys
     
     app = camera_app(sys.argv)
+
     sys.exit(app.exec_())

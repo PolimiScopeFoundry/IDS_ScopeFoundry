@@ -55,13 +55,13 @@ class Camera:
 
     def get_exposure_ms(self):
         val = self.remote_nodemap.FindNode("ExposureTime").Value()/1000
-        print(val)
+        print("Exposure time:", val, "ms")
         return val
             
 
     def get_frame_rate(self):
         val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
-        print(val)
+        print("Frame rate:", val, "fps")
         return val
 
 
@@ -69,7 +69,7 @@ class Camera:
         value=value*1000
         self.set_node_value("ExposureTime",value)
         max_exposure = self.remote_nodemap.FindNode("ExposureTime").Maximum()
-        print(value, max_exposure)
+        #print(value, max_exposure)
         if value > max_exposure: 
             self.remote_nodemap.FindNode("AcquisitionFrameRate").SetValue(
                 self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum())
@@ -77,23 +77,32 @@ class Camera:
     def set_frame_rate(self,framerate):
         max_rate = self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum()
         self.set_node_value("AcquisitionFrameRate", min(framerate, max_rate))
-        print(self.remote_nodemap.FindNode("AcquisitionFrameRate").Value())
+        #print(self.remote_nodemap.FindNode("AcquisitionFrameRate").Value())
 
 
     def set_gain(self,value):
         self.set_node_value("Gain",value)
 
 
+    def get_available_bit_depths(self):
+        nm=self.remote_nodemap
+        allEntries = nm.FindNode("PixelFormat").Entries()
+        availableEntries = []
+        for entry in allEntries:
+            if (entry.AccessStatus() != ids_peak.NodeAccessStatus_NotAvailable
+                    and entry.AccessStatus() != ids_peak.NodeAccessStatus_NotImplemented):
+                availableEntries.append(entry.SymbolicValue())
+        return availableEntries
+        
+        
     def set_bit_depth(self,value):
-        if value==8:
-            self.remote_nodemap.FindNode("PixelFormat").SetCurrentEntry(self.remote_nodemap.FindNode("PixelFormat").Entries()[0])
-        elif value==10:
-            self.remote_nodemap.FindNode("PixelFormat").SetCurrentEntry(self.remote_nodemap.FindNode("PixelFormat").Entries()[3])
-        elif value==12:
-            self.remote_nodemap.FindNode("PixelFormat").SetCurrentEntry(self.remote_nodemap.FindNode("PixelFormat").Entries()[4])
-        else:
-            warnings.warn("Invalid bit depth")
+        nm = self.remote_nodemap
+        nm.FindNode("PixelFormat").SetCurrentEntry(value)
 
+    def get_bit_depth(self):
+        nm = self.remote_nodemap
+        value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
+        print("Bit depth:", value)
 
     def set_frame_num(self, nframes):
         nm = self.remote_nodemap
@@ -165,8 +174,6 @@ class Camera:
             self.data_stream.QueueBuffer(buf)
         return img
 
-            
-    
 
     def get_frame(self, timeout_ms=1000):
         buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
@@ -195,9 +202,6 @@ class Camera:
             self.data_stream.QueueBuffer(buffer)
             yield img
             
-                
-    
-
 
     def set_external_trigger(self, line="Line0", activation="RisingEdge", exposure_mode="Timed"):
         nm = self.remote_nodemap
@@ -227,10 +231,12 @@ class Camera:
         except Exception:
             pass
 
+
     def disable_trigger(self):
         nm = self.remote_nodemap
         nm.FindNode("TriggerSelector").SetCurrentEntry("FrameStart")
         nm.FindNode("TriggerMode").SetValue(0)  # Off
+
 
     def close(self):
         try:
@@ -246,28 +252,35 @@ class Camera:
         except Exception:
             pass
 
+
 if __name__=="__main__":
     import time
     cam=Camera()
-    cam.set_bit_depth(10)
-    cam.set_full_chip()
-    # cam.set_active_region(300,900,300,300)
-
-    cam.set_exposure_ms(1.0)
-    cam.set_frame_rate(100)
-    cam.set_gain(10.0)
-
-    N=100
     
-    cam.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry("Continuous")
-    cam.start_acquisition(int(N))
 
-    cam.get_live_frame()
-
-    t = time.perf_counter()
+    # Determine the current entry of PixelFormat (str)
+    nm = cam.remote_nodemap
+    value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
+    # Get a list of all available entries of PixelFormat
     
-    cam.stop_acquisition()
+    
+    
+    allEntries = nm.FindNode("PixelFormat").Entries()
+    availableEntries = []
+    for entry in allEntries:
+        if (entry.AccessStatus() != ids_peak.NodeAccessStatus_NotAvailable
+                and entry.AccessStatus() != ids_peak.NodeAccessStatus_NotImplemented):
+            availableEntries.append(entry.SymbolicValue())
+    
+    print(availableEntries)
+    nm.FindNode("PixelFormat").SetCurrentEntry("Mono10")
+    value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
+    print(value)
+    
+    # Set PixelFormat to "BayerRG8" (str)
+        
 
+    
     
     cam.close()
 
