@@ -202,8 +202,6 @@ class IdsMeasure(Measurement):
                 self.im = ImageManager(
                         img.shape[1], img.shape[0],
                         self.settings.roi_size.val,
-                        min_object_area = self.settings.min_object_area.val,
-                        max_object_area = self.settings.max_object_area.val,
                         Nchannels=self.settings.channel_num.val,
                         dtype=img.dtype
                         )
@@ -278,7 +276,9 @@ class IdsMeasure(Measurement):
 
     def detect_objects(self):
         #time0 = time.time()
-        self.im.find_object(self.settings.selected_channel.val)
+        self.im.find_object(self.settings.selected_channel.val,
+                            self.settings.min_object_area.val, self.settings.max_object_area.val,
+                            bitdepth=self.camera.camera_device.get_bit_depth())
         self.settings['objects_in_frame'] = len(self.im.contours)
         #print(f'Objects {self.settings['objects_in_frame']} acquired in {time.time()-time0:.3f} s')
             

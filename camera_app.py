@@ -36,8 +36,8 @@ if __name__ == '__main__':
 
     #`app.settings_load_ini(new_path)
     # connect all the hardwares
-    for hc_name, hc in app.hardware.items():
-        hc.settings['connected'] = True
+    #for hc_name, hc in app.hardware.items():
+    #    hc.settings['connected'] = True
 
 
     sys.exit(app.exec_())

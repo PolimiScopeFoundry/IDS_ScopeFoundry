@@ -3,9 +3,16 @@ from ids_peak import ids_peak_ipl_extension
 import warnings
 import numpy
 
+BitDepthChoices = {	8: "Mono8",
+                    10: "Mono10",
+                    12: "Mono12",
+                    16: "Mono16"
+                   }
+
 
 class Camera:
-    def __init__(self, cam_num=0):
+    
+    def __init__(self, cam_num=0, debug=False):
         ids_peak.Library.Initialize()
         device_manager = ids_peak.DeviceManager.Instance()
         device_manager.Update()
@@ -13,10 +20,21 @@ class Camera:
         # Nodemap for accessing GenICam nodes
         self.remote_nodemap = self.device.RemoteDevice().NodeMaps()[0]
         self.data_stream = self.device.DataStreams()[0].OpenDataStream()
+        self.debug = debug
+
+    def set_debug_mode(self, value):
+        self.debug = value
+
+    def get_debug_mode(self):
+        return self.debug
+
+    def get_model(self):
+        return self.device.ModelName()
 
     def get_width(self):
         w_h = self.get_size()
         return w_h[0] 
+
 
     def get_height(self):
         w_h = self.get_size()
@@ -51,38 +69,39 @@ class Camera:
         self.set_node_value("Height", h)
         self.set_node_value("OffsetX",x)
         self.set_node_value("OffsetY", y)
-
+            
+    def get_frame_rate(self):
+        val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
+        if self.debug: print("Frame rate:", val, "fps")
+        return val
+    
+    def set_frame_rate(self,framerate):
+        max_rate = self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum()
+        self.set_node_value("AcquisitionFrameRate", min(framerate, max_rate))
+        if self.debug: self.get_frame_rate
 
     def get_exposure_ms(self):
         val = self.remote_nodemap.FindNode("ExposureTime").Value()/1000
-        print("Exposure time:", val, "ms")
+        if self.debug: print("Exposure time:", val, "ms")
         return val
-            
-
-    def get_frame_rate(self):
-        val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
-        print("Frame rate:", val, "fps")
-        return val
-
 
     def set_exposure_ms(self,value):
         value=value*1000
         self.set_node_value("ExposureTime",value)
         max_exposure = self.remote_nodemap.FindNode("ExposureTime").Maximum()
-        #print(value, max_exposure)
         if value > max_exposure: 
             self.remote_nodemap.FindNode("AcquisitionFrameRate").SetValue(
                 self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum())
-        
-    def set_frame_rate(self,framerate):
-        max_rate = self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum()
-        self.set_node_value("AcquisitionFrameRate", min(framerate, max_rate))
-        #print(self.remote_nodemap.FindNode("AcquisitionFrameRate").Value())
-
+        if self.debug: self.get_exposure_ms()
 
     def set_gain(self,value):
         self.set_node_value("Gain",value)
+        if self.debug: self.get_gain()
 
+    def get_gain(self):
+        val = self.remote_nodemap.FindNode("Gain").Value()
+        if self.debug: print("Gain:", val)
+        return val
 
     def get_available_bit_depths(self):
         nm=self.remote_nodemap
@@ -94,21 +113,44 @@ class Camera:
                 availableEntries.append(entry.SymbolicValue())
         return availableEntries
         
-        
-    def set_bit_depth(self,value):
+    def set_bit_depth(self,numeric_value):
+        """ Sets the bit depth if available in the camera. If not available, sets the maximum available bit depth.
+
+        Args:
+            numeric_value (int): numeric value of the bit depth to be set. Possible values are in the BitDepthChoices dictionary    
+        """
         nm = self.remote_nodemap
-        nm.FindNode("PixelFormat").SetCurrentEntry(value)
+        if BitDepthChoices[numeric_value] in self.get_available_bit_depths():
+            nm.FindNode("PixelFormat").SetCurrentEntry(BitDepthChoices[numeric_value])
+        else:
+            print("Selected bit depth not available. Setting to maximum available bit depth.")
+            self.set_maximum_bit_depth()
+        if self.debug: self.get_bit_depth()
+
+    def set_maximum_bit_depth(self):
+        """ Sets the maximum available bit depth
+            and returns the numeric value of the set bit depth          
+            Output: int: numeric value of the set bit depth. None if no bit depth is set"""
+        choices_list = list(BitDepthChoices.keys())
+        choices_list.sort(reverse=True)
+        nm = self.remote_nodemap
+        for numeric_value in choices_list:
+            if BitDepthChoices[numeric_value] in self.get_available_bit_depths():
+                nm.FindNode("PixelFormat").SetCurrentEntry(BitDepthChoices[numeric_value])
+                return numeric_value # returns the numeric beatdepth and interrupts the cycle if an available bitdepth is set
 
     def get_bit_depth(self):
         nm = self.remote_nodemap
-        value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
-        print("Bit depth:", value)
+        symbolic_value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
+        for key,value in BitDepthChoices.items():
+            if value==symbolic_value:
+                if self.debug: print("Bit depth:", key)
+                return key
 
     def set_frame_num(self, nframes):
         nm = self.remote_nodemap
         nm.FindNode("AcquisitionMode").SetCurrentEntry("MultiFrame")
         nm.FindNode("AcquisitionFrameCount").SetValue(int(nframes))
-
 
     def start_acquisition(self, buffersize=64):
         nm = self.remote_nodemap
@@ -263,8 +305,6 @@ if __name__=="__main__":
     value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
     # Get a list of all available entries of PixelFormat
     
-    
-    
     allEntries = nm.FindNode("PixelFormat").Entries()
     availableEntries = []
     for entry in allEntries:
@@ -273,9 +313,11 @@ if __name__=="__main__":
             availableEntries.append(entry.SymbolicValue())
     
     print(availableEntries)
-    nm.FindNode("PixelFormat").SetCurrentEntry("Mono10")
+    nm.FindNode("PixelFormat").SetCurrentEntry("Mono8")
     value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
-    print(value)
+    value=cam.get_bit_depth()
+    print(dir(cam.device))
+    print(cam.device.ModelName())
     
     # Set PixelFormat to "BayerRG8" (str)
         

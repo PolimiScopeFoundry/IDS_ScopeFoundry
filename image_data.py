@@ -23,26 +23,25 @@ class ImageManager:
         self.cy = []             # list of the y coordinates of the centroids of the detected object
          
         self.roisize = roisize        # roi size
-        self.min_object_area = min_object_area    # minimum area that the object must have to be recognized as a object
-        self.max_object_area = max_object_area    # maximum area that the object can have to be recognized as a object
 
     def clear_countours(self):
         self.contours = []        
         self.cx = []             
         self.cy = []
         
-    def find_object(self, ch):    # ch: selected channel       
+    def find_object(self, ch, min_object_area, max_object_area, bitdepth=12):    # ch: selected channel       
         """ Input: 
              ch: channel to use to create the 8 bit image to process
         Determines if a region avove thresold is a object, generates contours of the objects and their centroids cx and cy      
         """          
-    
-        image8bit = (self.image[ch]/256).astype('uint8')
+        im = self.image[ch]
+        norm_factor = (2**(bitdepth)-1) /255
+        image8bit = (im/norm_factor).astype('uint8')
         
         _ret,thresh_pre = cv2.threshold(image8bit,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
         # ret is the threshold that was used, thresh is the thresholded image.     
-        kernel  = np.ones((2,2),np.uint8)
-        thresh = cv2.morphologyEx(thresh_pre,cv2.MORPH_OPEN, kernel, iterations = 1)
+        kernel  = np.ones((3,3),np.uint8)
+        thresh = cv2.morphologyEx(thresh_pre,cv2.MORPH_OPEN, kernel, iterations = 2)
         # morphological opening (removes noise)
         cnts, _hierarchy = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
         cx = []
@@ -54,7 +53,7 @@ class ImageManager:
         for cnt in cnts:
             
             M = cv2.moments(cnt)
-            if M['m00'] >  int(self.min_object_area) and M['m00'] < int(self.max_object_area): 
+            if M['m00'] >  int(min_object_area) and M['m00'] < int(max_object_area): 
                 # (M['m00'] gives the contour area, also as cv2.contourArea(cnt)
                 x0 = int(M['m10']/M['m00']) 
                 y0 = int(M['m01']/M['m00'])
@@ -79,7 +78,6 @@ class ImageManager:
             self.dim_h,
             self.dim_v,
             self.roisize,
-            min_object_area=self.min_object_area,
             Nchannels=self.image.shape[0],
             dtype=self.image.dtype
         )
