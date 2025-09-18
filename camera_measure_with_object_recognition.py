@@ -65,6 +65,7 @@ class IdsMeasure(Measurement):
         self.settings.New('sampling_period', dtype=float, unit='s', initial=0.1)
         self.settings.New('zoom', dtype=int, initial=50, vmin=25, vmax=100)
         self.settings.New('rotate', dtype=bool, initial=True)
+        self.settings.New('normalization',dtype=int,initial=256)
         
         # Convenient reference to the hardware used in the measurement
         self.camera = self.app.hardware['IDS'] 
@@ -278,7 +279,8 @@ class IdsMeasure(Measurement):
         #time0 = time.time()
         self.im.find_object(self.settings.selected_channel.val,
                             self.settings.min_object_area.val, self.settings.max_object_area.val,
-                            bitdepth=self.camera.camera_device.get_bit_depth())
+                            bitdepth=self.camera.camera_device.get_bit_depth(),
+                            norm_factor=self.settings.normalization.val)
         self.settings['objects_in_frame'] = len(self.im.contours)
         #print(f'Objects {self.settings['objects_in_frame']} acquired in {time.time()-time0:.3f} s')
             

@@ -10,8 +10,6 @@ class ImageManager:
 
     def __init__(self, dim_h, dim_v,
                  roisize,
-                 min_object_area=10,
-                 max_object_area=100,
                  Nchannels = 2, dtype=np.uint16):
 
         self.image = np.zeros((Nchannels,dim_v,dim_h),dtype) # original 16 bit images from the N channels   
@@ -29,13 +27,14 @@ class ImageManager:
         self.cx = []             
         self.cy = []
         
-    def find_object(self, ch, min_object_area, max_object_area, bitdepth=12):    # ch: selected channel       
+    def find_object(self, ch, min_object_area, max_object_area, bitdepth=12, norm_factor=None):    # ch: selected channel       
         """ Input: 
              ch: channel to use to create the 8 bit image to process
         Determines if a region avove thresold is a object, generates contours of the objects and their centroids cx and cy      
         """          
         im = self.image[ch]
-        norm_factor = (2**(bitdepth)-1) /255
+        if norm_factor is None:
+            norm_factor = (2**(bitdepth)-1) /255
         image8bit = (im/norm_factor).astype('uint8')
         
         _ret,thresh_pre = cv2.threshold(image8bit,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
