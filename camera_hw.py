@@ -29,9 +29,19 @@ class IdsHW(HardwareComponent):
         self.exposure_time = self.settings.New(name='exposure_time', initial=100, vmax =5000.,
                                                vmin = 0.01, spinbox_step = 0.1,dtype=float, ro=False, unit='ms',
                                                reread_from_hardware_after_write=True)
+        self.acquisition_mode = self.settings.New(name='acquisition_mode', dtype=str,
+                                                choices=['Continuous', 'MultiFrame', 'SingleFrame'], 
+                                                initial = 'Continuous', ro=False)
+
         self.exposure_mode = self.settings.New(name='exposure_mode', dtype=str,
                                                 choices=['Timed', 'TriggerControlled'], 
                                                 initial = 'Timed', ro=False)
+        
+        self.stream_mode = self.settings.New(name='stream_mode', dtype= str,
+                                                choices=['NewestOnly', 'OldestFirst',
+                                                         'OldestFirstSingleBuffer','OldestFirstDependOnCameraFIFO'], 
+                                                initial = 'OldestFirst', ro=False)
+                                             
         
 
     
@@ -53,6 +63,11 @@ class IdsHW(HardwareComponent):
         self.gain.hardware_read_func = self.camera_device.get_gain
         self.debug_mode.hardware_read_func = self.camera_device.get_debug_mode
         self.debug_mode.hardware_set_func = self.camera_device.set_debug_mode
+        self.acquisition_mode.hardware_read_func = self.camera_device.get_acquisition_mode
+        self.acquisition_mode.hardware_set_func = self.camera_device.set_acquisition_mode
+        self.stream_mode.hardware_read_func = self.camera_device.get_stream_mode
+        self.stream_mode.hardware_set_func = self.camera_device.set_stream_mode
+        
         self.read_from_hardware()
         
     def disconnect(self):

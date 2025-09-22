@@ -25,11 +25,14 @@ class IdsMeasure(Measurement):
         self.ui_filename = sibling_path(__file__, "camera.ui")
         self.ui = load_qt_ui_file(self.ui_filename) 
         
-        self.settings.New('save_h5', dtype=bool, initial=False)         
         self.settings.New('refresh_period', dtype = float, unit ='s', spinbox_decimals = 3, initial = 0.08, vmin = 0) 
-
+        self.settings.New('saving_type', dtype=str, initial='None', choices=['None', 'Stack'])
+        
         self.frame_num = self.settings.New(name='frame_num',initial= 10, spinbox_step = 1,
-                                           dtype=int, ro=False)       
+                                           dtype=int, ro=False)  
+        
+        self.settings.New('zoom', dtype=int, initial=50, vmin=25, vmax=100)
+        self.settings.New('rotate', dtype=bool, initial=True)     
         
         self.settings.New('xsampling', dtype=float, unit='um', initial=0.0586, spinbox_decimals = 3) 
         self.settings.New('ysampling', dtype=float, unit='um', initial=0.0586, spinbox_decimals = 3)
@@ -40,7 +43,7 @@ class IdsMeasure(Measurement):
         self.settings.New('level_min', dtype=int, initial=60)
         self.settings.New('level_max', dtype=int, initial=4000)
         
-        self.image_gen = self.app.hardware['IDS'] 
+        self.camera = self.app.hardware['IDS'] 
         
     def setup_figure(self):
         """
@@ -52,15 +55,19 @@ class IdsMeasure(Measurement):
         # connect ui widgets to measurement/hardware settings or functions
         self.ui.start_pushButton.clicked.connect(self.start)
         self.ui.interrupt_pushButton.clicked.connect(self.interrupt)
-        self.settings.save_h5.connect_to_widget(self.ui.save_h5_checkBox)
+        self.settings.saving_type.connect_to_widget(self.ui.save_comboBox)
         self.settings.auto_levels.connect_to_widget(self.ui.autoLevels_checkbox)
         self.settings.auto_range.connect_to_widget(self.ui.autoRange_checkbox)
         self.settings.level_min.connect_to_widget(self.ui.min_doubleSpinBox) 
-        self.settings.level_max.connect_to_widget(self.ui.max_doubleSpinBox) 
+        self.settings.level_max.connect_to_widget(self.ui.max_doubleSpinBox)
+        self.settings.zoom.connect_to_widget(self.ui.zoomSlider)
+        self.settings.rotate.connect_to_widget(self.ui.rotate_checkBox) 
                 
-        # Set up pyqtgraph graph_layout in the UI
         self.imv = pg.ImageView()
-        self.ui.imageLayout.addWidget(self.imv)
+        self.imv.ui.histogram.hide()
+        self.imv.ui.roiBtn.hide()
+        self.imv.ui.menuBtn.hide()
+        self.ui.image_layout.addWidget(self.imv)
         colors = [(0, 0, 0),
                   (45, 5, 61),
                   (84, 42, 55),
@@ -70,6 +77,8 @@ class IdsMeasure(Measurement):
                   ]
         cmap = pg.ColorMap(pos=np.linspace(0.0, 1.0, 6), color=colors)
         self.imv.setColorMap(cmap)
+        self.screen_width = self.ui.screen().size().width() # Get screen width to be used for zooming
+
         
     def update_display(self):
         """
@@ -80,16 +89,28 @@ class IdsMeasure(Measurement):
         self.display_update_period = self.settings['refresh_period'] 
        
         length = self.frame_num.val
+
+        if self.settings.saving_type.val == 'None':
+            self.screen_width = self.ui.screen().size().width()
+            width = int(self.screen_width*self.settings['zoom']/100)
+            self.ui.setFixedWidth(width)
         
-        self.settings['progress'] = (self.frame_index +1) * 100/length
+        if self.settings['saving_type'] == 'Stack' and hasattr(self,'frame_index'):
+            self.settings['progress'] = (self.frame_index +1) * 100/length
         
-        if hasattr(self, 'img'):
-            self.imv.setImage(self.img,
-                                autoLevels = self.settings['auto_levels'],
-                                autoRange = self.auto_range.val,
-                                levelMode = 'mono'
-                                )
+        if hasattr(self,'img'):
+
+            img=self.img
             
+            if self.settings['rotate']:   
+                img=img.T
+
+            self.imv.setImage(img,
+                            autoLevels = self.settings['auto_levels'],
+                            autoRange = self.settings['auto_range'],
+                            levelMode = 'mono'
+                            )
+                
             if self.settings['auto_levels']:
                 lmin,lmax = self.imv.getHistogramWidget().getLevels()
                 self.settings['level_min'] = lmin
@@ -97,7 +118,7 @@ class IdsMeasure(Measurement):
             else:
                 self.imv.setLevels( min= self.settings['level_min'],
                                     max= self.settings['level_max'])
-            
+                
     
     def measure(self):
         """
@@ -105,25 +126,25 @@ class IdsMeasure(Measurement):
         """
 
         frame_num  = self.frame_num.val
+        self.camera.camera_device.set_acquisition_mode("MultiFrame")
+        self.camera.camera_device.set_frame_num(frame_num)
+        self.camera.camera_device.set_stream_mode("OldestFirst")
+
         self.frame_index = 0
-        #nm = self.image_gen.camera.remote_nodemap
-        self.image_gen.camera.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry("Continuous")
-        #nm.FindNode("AcquisitionMode").SetCurrentEntry("MultiFrame")
-        #nm.FindNode("AcquisitionFrameCount").SetValue(int(frame_num)) 
-        self.image_gen.camera.start_acquisition()
+        
+        self.camera.camera_device.start_acquisition()
 
         self.create_h5_file()
 
         t = time.perf_counter()
 
-        for frame_idx, img in enumerate(self.image_gen.camera.get_multiple_frames(frame_num)):
-            
+        for frame_idx in range(frame_num):
+        
+            img = self.camera.camera_device.get_frame()
+
             self.img = img
             
             self.frame_index = frame_idx
-            # dt = time.perf_counter() - t
-            # print(f"Frame {frame_idx}: shape={img.shape}, Δt={dt:.4f}s")
-            # t = time.perf_counter()
 
             if self.interrupt_measurement_called:
                 break
@@ -131,9 +152,10 @@ class IdsMeasure(Measurement):
             self.image_h5[frame_idx,:,:] = img
         
         self.h5file.flush()
-        self.image_gen.camera.stop_acquisition()
+        self.camera.camera_device.stop_acquisition()
+        self.camera.camera_device.set_acquisition_mode("Continuous")
         self.h5file.close()
-        self.settings['save_h5'] = False
+        self.settings['saving_type'] = 'None'
 
     
     def run(self):
@@ -142,25 +164,25 @@ class IdsMeasure(Measurement):
         It should not update the graphical interface directly, and should only
         focus on data acquisition.
         """
-        self.image_gen.read_from_hardware()
+        self.camera.read_from_hardware()
         
         try:
             self.frame_index = -1
-            self.image_gen.camera.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry("Continuous")
-            self.image_gen.settings['exposure_mode'] = 'Timed'
-            self.image_gen.camera.start_acquisition() 
+            self.camera.camera_device.set_acquisition_mode("Continuous")
+            self.camera.camera_device.set_stream_mode("NewestOnly")
+            self.camera.camera_device.start_acquisition() 
             
             while not self.interrupt_measurement_called:
                      
-                self.img = self.image_gen.camera.get_live_frame()
+                self.img = self.camera.camera_device.get_frame()
                 
                 if self.interrupt_measurement_called:
-                    self.image_gen.camera.stop_acquisition() 
+                    self.camera.camera_device.stop_acquisition() 
                     break
                 
-                if self.settings['save_h5']:
+                if self.settings['saving_type'] == 'Stack':
                     # measure is triggered by save_h5 button
-                    self.image_gen.camera.stop_acquisition() 
+                    self.camera.camera_device.stop_acquisition() 
                     self.measure()
                     break
         finally:

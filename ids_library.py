@@ -69,10 +69,46 @@ class Camera:
         self.set_node_value("Height", h)
         self.set_node_value("OffsetX",x)
         self.set_node_value("OffsetY", y)
+
+    def set_roi(self, x, y, width, height):
+        m_node_map_remote_device = self.remote_nodemap
+        
+        # Get the minimum ROI and set it. After that there are no size restrictions anymore
+        x_min = m_node_map_remote_device.FindNode("OffsetX").Minimum()
+        y_min = m_node_map_remote_device.FindNode("OffsetY").Minimum()
+        w_min = m_node_map_remote_device.FindNode("Width").Minimum()
+        h_min = m_node_map_remote_device.FindNode("Height").Minimum()
+    
+        m_node_map_remote_device.FindNode("OffsetX").SetValue(x_min)
+        m_node_map_remote_device.FindNode("OffsetY").SetValue(y_min)
+        m_node_map_remote_device.FindNode("Width").SetValue(w_min)
+        m_node_map_remote_device.FindNode("Height").SetValue(h_min)
+    
+        # Get the maximum ROI values
+        x_max = m_node_map_remote_device.FindNode("OffsetX").Maximum()
+        y_max = m_node_map_remote_device.FindNode("OffsetY").Maximum()
+        w_max = m_node_map_remote_device.FindNode("Width").Maximum()
+        h_max = m_node_map_remote_device.FindNode("Height").Maximum()
+    
+        if (x < x_min) or (y < y_min) or (x > x_max) or (y > y_max):
+            return False
+        elif (width < w_min) or (height < h_min) or ((x + width) > w_max) or ((y + height) > h_max):
+            return False
+        else:
+            # Now, set final AOI
+            m_node_map_remote_device.FindNode("OffsetX").SetValue(x)
+            m_node_map_remote_device.FindNode("OffsetY").SetValue(y)
+            m_node_map_remote_device.FindNode("Width").SetValue(width)
+            m_node_map_remote_device.FindNode("Height").SetValue(height)
+            return True
+
+
             
     def get_frame_rate(self):
         val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
-        if self.debug: print("Frame rate:", val, "fps")
+        if self.debug: 
+            max_val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Maximum()
+            print(f"Frame rate:{val}, with maximum available value: {max_val}")
         return val
     
     def set_frame_rate(self,framerate):
@@ -82,7 +118,9 @@ class Camera:
 
     def get_exposure_ms(self):
         val = self.remote_nodemap.FindNode("ExposureTime").Value()/1000
-        if self.debug: print("Exposure time:", val, "ms")
+        if self.debug: 
+            max_val = self.remote_nodemap.FindNode("ExposureTime").Maximum()
+            print(f"ExposureTime:{val}, with maximum available value: {max_val}") 
         return val
 
     def set_exposure_ms(self,value):
@@ -100,7 +138,9 @@ class Camera:
 
     def get_gain(self):
         val = self.remote_nodemap.FindNode("Gain").Value()
-        if self.debug: print("Gain:", val)
+        if self.debug:
+            max_val = self.remote_nodemap.FindNode("Gain").Maximum()
+            print(f"Gain:{val}, with maximum gain available {max_val}")
         return val
 
     def get_available_bit_depths(self):
@@ -152,7 +192,33 @@ class Camera:
         nm.FindNode("AcquisitionMode").SetCurrentEntry("MultiFrame")
         nm.FindNode("AcquisitionFrameCount").SetValue(int(nframes))
 
+
+    def set_acquisition_mode(self, mode="Continuous"):
+        self.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry(mode)
+        
+    def get_acquisition_mode(self):
+        value=self.remote_nodemap.FindNode("AcquisitionMode").CurrentEntry().SymbolicValue()
+        if self.debug:
+            print(f"AcquisitionMode:{value}")
+        return value
+
+
+    def set_stream_mode(self,value):
+        self.data_stream.NodeMaps()[0].FindNode("StreamBufferHandlingMode").SetCurrentEntry(value)
+
+
+    def get_stream_mode(self):
+        value = self.data_stream.NodeMaps()[0].FindNode("StreamBufferHandlingMode").CurrentEntry().SymbolicValue()
+        if self.debug:
+            print(f"StreamBufferHandlingMode:{value}")
+        return value
+
+
     def start_acquisition(self, buffersize=64):
+
+        if self.debug:
+            value = self.data_stream.NodeMaps()[0].FindNode("StreamBufferHandlingMode").CurrentEntry().SymbolicValue()
+            print("StreamBufferHandlingMode",value)
         nm = self.remote_nodemap
         payload_size = nm.FindNode("PayloadSize").Value()
         min_req = self.data_stream.NumBuffersAnnouncedMinRequired()
@@ -170,11 +236,14 @@ class Camera:
 
 
     def stop_acquisition(self):
-        self.remote_nodemap.FindNode("AcquisitionStop").Execute()
-        self.remote_nodemap.FindNode("AcquisitionStop").WaitUntilDone()
 
-        self.data_stream.StopAcquisition(ids_peak.AcquisitionStopMode_Default)
-        self.data_stream.Flush(ids_peak.DataStreamFlushMode_DiscardAll)
+        if self.data_stream.NodeMaps()[0].FindNode("StreamIsGrabbing").Value():
+            self.remote_nodemap.FindNode("AcquisitionStop").Execute()
+            self.remote_nodemap.FindNode("AcquisitionStop").WaitUntilDone()
+
+            self.data_stream.StopAcquisition(ids_peak.AcquisitionStopMode_Default)
+            self.data_stream.Flush(ids_peak.DataStreamFlushMode_DiscardAll)
+        else: print("Data stream not running")
         for buffer in self.data_stream.AnnouncedBuffers():
             self.data_stream.RevokeBuffer(buffer)
 
@@ -318,11 +387,31 @@ if __name__=="__main__":
     value=cam.get_bit_depth()
     print(dir(cam.device))
     print(cam.device.ModelName())
-    
-    # Set PixelFormat to "BayerRG8" (str)
-        
 
+    #value = cam.data_stream.nodeMapDataStream.FindNode("StreamBufferHandlingMode").CurrentEntry().SymbolicValue()
+    #print(value)
+    # Set PixelFormat to "BayerRG8" (str)
+    print(cam.data_stream.NodeMaps()[0].FindNode("StreamBufferHandlingMode").CurrentEntry().SymbolicValue())
     
+    cam.debug=True
     
+    allEntries = nm.FindNode("AcquisitionMode").Entries()
+    availableEntries = []
+    for entry in allEntries:
+        if (entry.AccessStatus() != ids_peak.NodeAccessStatus_NotAvailable
+            and entry.AccessStatus() != ids_peak.NodeAccessStatus_NotImplemented):
+            availableEntries.append(entry.SymbolicValue())
+    print(availableEntries)
+
+    cam.get_acquisition_mode()
+    cam.get_acquisition_mode()
+
+    print(cam.set_active_region(16, 16, 128, 128))
+
+    print(cam.get_width())
+
+    is_grabbing = cam.data_stream.NodeMaps()[0].FindNode("StreamIsGrabbing").Value() 
+    print(is_grabbing)
+
     cam.close()
 
