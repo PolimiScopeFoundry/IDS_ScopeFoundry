@@ -32,26 +32,62 @@ class Camera:
         return self.device.ModelName()
 
     def get_width(self):
-        w_h = self.get_size()
-        return w_h[0] 
-
+        val = self.remote_nodemap.FindNode("Width").Value()
+        if self.debug:
+            print(f'Width {val} with maximum {self.get_size()[0]}')
+        return val 
 
     def get_height(self):
-        w_h = self.get_size()
-        return w_h[1]
+        val = self.remote_nodemap.FindNode("Height").Value()
+        if self.debug:
+            print(f'Height {val} with maximum {self.get_size()[1]}')
+        return val 
+
+    def get_offsetx(self):
+        val = self.remote_nodemap.FindNode("OffsetX").Value()
+        if self.debug:
+            print(f'OffsetX {val}')
+        return val 
+    
+    def get_offsety(self):
+        val = self.remote_nodemap.FindNode("OffsetY").Value()
+        if self.debug:
+            print(f'OffsetY {val}')
+        return val 
+    
+    def set_width(self,w):
+        x,y,_,h = self.get_active_region()
+        self.set_active_region(x,y,w,h)
+    
+    def set_height(self,h):
+        x,y,w,_ = self.get_active_region()
+        self.set_active_region(x,y,w,h)
+
+    def set_offsetx(self,x):
+        _,y,w,h = self.get_active_region()
+        self.set_active_region(x,y,w,h)
+
+    def set_offsety(self,y):
+        x,_,w,h = self.get_active_region()
+        self.set_active_region(x,y,w,h)
 
     def get_size(self):
+        """
+        Gets the full size of the sensor"""
         return(self.remote_nodemap.FindNode("SensorWidth").Value(),self.remote_nodemap.FindNode("SensorHeight").Value())
 
     def set_node_value(self,name,value):
-        if value<self.remote_nodemap.FindNode(name).Minimum():
-            self.remote_nodemap.FindNode(name).SetValue(
-                self.remote_nodemap.FindNode(name).Minimum())
-        elif value>self.remote_nodemap.FindNode(name).Maximum():
-            self.remote_nodemap.FindNode(name).SetValue(
-                self.remote_nodemap.FindNode(name).Maximum())
+        val_min = self.remote_nodemap.FindNode(name).Minimum()
+        val_max = self.remote_nodemap.FindNode(name).Maximum()
+        if value<val_min:
+            self.remote_nodemap.FindNode(name).SetValue(val_min)
+
+        elif value>val_max:
+            self.remote_nodemap.FindNode(name).SetValue(val_max)
         else:
             self.remote_nodemap.FindNode(name).SetValue(value)
+        if self.debug:
+            print(f'{name} set to {value} with min {val_min} and max {val_max}')
 
     def set_full_chip(self):
         self.remote_nodemap.FindNode("OffsetX").SetValue(0)
@@ -61,49 +97,32 @@ class Camera:
         self.remote_nodemap.FindNode("Height").SetValue(
             self.remote_nodemap.FindNode("Height").Maximum())
 
-    def set_active_region(self,x,y,w,h):
-        self.remote_nodemap.FindNode("OffsetX").SetValue(0)
-        self.remote_nodemap.FindNode("OffsetY").SetValue(0)
-
-        self.set_node_value("Width",w)
-        self.set_node_value("Height", h)
-        self.set_node_value("OffsetX",x)
-        self.set_node_value("OffsetY", y)
-
-    def set_roi(self, x, y, width, height):
-        m_node_map_remote_device = self.remote_nodemap
-        
-        # Get the minimum ROI and set it. After that there are no size restrictions anymore
-        x_min = m_node_map_remote_device.FindNode("OffsetX").Minimum()
-        y_min = m_node_map_remote_device.FindNode("OffsetY").Minimum()
-        w_min = m_node_map_remote_device.FindNode("Width").Minimum()
-        h_min = m_node_map_remote_device.FindNode("Height").Minimum()
-    
-        m_node_map_remote_device.FindNode("OffsetX").SetValue(x_min)
-        m_node_map_remote_device.FindNode("OffsetY").SetValue(y_min)
-        m_node_map_remote_device.FindNode("Width").SetValue(w_min)
-        m_node_map_remote_device.FindNode("Height").SetValue(h_min)
-    
-        # Get the maximum ROI values
-        x_max = m_node_map_remote_device.FindNode("OffsetX").Maximum()
-        y_max = m_node_map_remote_device.FindNode("OffsetY").Maximum()
-        w_max = m_node_map_remote_device.FindNode("Width").Maximum()
-        h_max = m_node_map_remote_device.FindNode("Height").Maximum()
-    
-        if (x < x_min) or (y < y_min) or (x > x_max) or (y > y_max):
-            return False
-        elif (width < w_min) or (height < h_min) or ((x + width) > w_max) or ((y + height) > h_max):
-            return False
-        else:
-            # Now, set final AOI
-            m_node_map_remote_device.FindNode("OffsetX").SetValue(x)
-            m_node_map_remote_device.FindNode("OffsetY").SetValue(y)
-            m_node_map_remote_device.FindNode("Width").SetValue(width)
-            m_node_map_remote_device.FindNode("Height").SetValue(height)
-            return True
-
-
             
+
+    def set_active_region(self,x,y,w,h):
+        rn = self.remote_nodemap
+        params = {"Width":w,
+                  "Height":h,
+                  "OffsetX": x,
+                  "OffsetY": y}
+        
+        self.set_node_value("OffsetX",0)
+        self.set_node_value("OffsetY",0)
+        
+        for key,val in params.items():
+
+            self.set_node_value(key,val)
+
+
+    def get_active_region(self):
+        rn = self.remote_nodemap
+        x = rn.FindNode("OffsetX").Value()
+        y = rn.FindNode("OffsetY").Value()
+        w = rn.FindNode("Width").Value()
+        h = rn.FindNode("Height").Value()
+        return x,y,w,h  
+
+
     def get_frame_rate(self):
         val = self.remote_nodemap.FindNode("AcquisitionFrameRate").Value()
         if self.debug: 
@@ -119,8 +138,8 @@ class Camera:
     def get_exposure_ms(self):
         val = self.remote_nodemap.FindNode("ExposureTime").Value()/1000
         if self.debug: 
-            max_val = self.remote_nodemap.FindNode("ExposureTime").Maximum()
-            print(f"ExposureTime:{val}, with maximum available value: {max_val}") 
+            min_val = self.remote_nodemap.FindNode("ExposureTime").Minimum()/1000
+            print(f"ExposureTime: {val} ms, with minimum available value: {min_val} ms") 
         return val
 
     def set_exposure_ms(self,value):
@@ -134,7 +153,7 @@ class Camera:
 
     def set_gain(self,value):
         self.set_node_value("Gain",value)
-        if self.debug: self.get_gain()
+
 
     def get_gain(self):
         val = self.remote_nodemap.FindNode("Gain").Value()
@@ -165,7 +184,6 @@ class Camera:
         else:
             print("Selected bit depth not available. Setting to maximum available bit depth.")
             self.set_maximum_bit_depth()
-        if self.debug: self.get_bit_depth()
 
     def set_maximum_bit_depth(self):
         """ Sets the maximum available bit depth
@@ -184,7 +202,6 @@ class Camera:
         symbolic_value = nm.FindNode("PixelFormat").CurrentEntry().SymbolicValue()
         for key,value in BitDepthChoices.items():
             if value==symbolic_value:
-                if self.debug: print("Bit depth:", key)
                 return key
 
     def set_frame_num(self, nframes):
@@ -196,6 +213,7 @@ class Camera:
     def set_acquisition_mode(self, mode="Continuous"):
         self.remote_nodemap.FindNode("AcquisitionMode").SetCurrentEntry(mode)
         
+
     def get_acquisition_mode(self):
         value=self.remote_nodemap.FindNode("AcquisitionMode").CurrentEntry().SymbolicValue()
         if self.debug:
@@ -213,8 +231,37 @@ class Camera:
             print(f"StreamBufferHandlingMode:{value}")
         return value
 
+    def read_node_safely(self, nm, node_name):
+        try:
+            node = nm.FindNode(node_name)
+            status = node.AccessStatus()
+            if status in (ids_peak.NodeAccessStatus_NotAvailable, ids_peak.NodeAccessStatus_NotImplemented):
+                return None  # not supported on this transport/device
+            return node.Value()
+        except Exception:
+            return None  # not readable in current state
 
-    def start_acquisition(self, buffersize=64):
+    def get_buffer_count(self):
+        nm = self.data_stream.NodeMaps()[0]  # DataStream NodeMap
+        
+        grabbing = nm.FindNode("StreamIsGrabbing").Value()
+        delivered = nm.FindNode("StreamDeliveredFrameCount").Value()
+        lost      = nm.FindNode("StreamLostFrameCount").Value()
+        in_cnt    = nm.FindNode("StreamInputBufferCount").Value()
+        out_cnt   = nm.FindNode("StreamOutputBufferCount").Value()
+        
+        if hasattr(self,"frame_id"):
+            frame_id = self.frame_id
+        else:
+            frame_id=None
+        
+        if self.debug:
+            print(f"grabbing={grabbing} delivered={delivered} lost={lost} in={in_cnt} out={out_cnt} frameID={frame_id}")
+
+        return grabbing, delivered, lost, in_cnt, out_cnt, frame_id
+        
+
+    def start_acquisition(self, buffersize=16):
 
         if self.debug:
             value = self.data_stream.NodeMaps()[0].FindNode("StreamBufferHandlingMode").CurrentEntry().SymbolicValue()
@@ -243,76 +290,28 @@ class Camera:
 
             self.data_stream.StopAcquisition(ids_peak.AcquisitionStopMode_Default)
             self.data_stream.Flush(ids_peak.DataStreamFlushMode_DiscardAll)
-        else: print("Data stream not running")
+        else: 
+            if self.debug: print("Data stream not running")
+        
         for buffer in self.data_stream.AnnouncedBuffers():
             self.data_stream.RevokeBuffer(buffer)
 
-    
-    def get_live_frame(self, timeout_ms=0, fallback_ms=1000):
-        """
-        Return the most recent finished frame already available.
-        Drains ready buffers, keeps only the newest one, copies once.
-        If none are ready, block for exactly one fresh frame.
-        """
-        last_buf = None
-
-        # Drain any ready buffers; keep only the newest unqueued
-        while True:
-            try:
-                buf = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-                if buf is None:
-                    break
-                if last_buf is not None:
-                    self.data_stream.QueueBuffer(last_buf)
-                last_buf = buf
-            except Exception:
-                break
-
-        if last_buf is not None:
-            try:
-                img = numpy.copy(ids_peak_ipl_extension.BufferToImage(last_buf).get_numpy())
-            finally:
-                self.data_stream.QueueBuffer(last_buf)
-            return img
-
-        # Nothing ready: block for one fresh buffer
-        buf = self.data_stream.WaitForFinishedBuffer(max(fallback_ms, 1))
-        if buf is None:
-            raise TimeoutError("No frame available")
-        try:
-            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buf).get_numpy())
-        finally:
-            self.data_stream.QueueBuffer(buf)
-        return img
-
-
     def get_frame(self, timeout_ms=1000):
+        """Gets frame from camera. 
+        Use set_stream_mode with values:
+        'NewestOnly', 'OldestFirst', 'OldestFirstSingleBuffer','OldestFirstDependOnCameraFIFO'
+        to change the streming buffer handling mode.
+        """
+
         buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
+        if self.debug:
+            self.frame_id = buffer.FrameID()
+
         ids_image=ids_peak_ipl_extension.BufferToImage(buffer)
         img = numpy.copy(ids_image.get_numpy())
         self.data_stream.QueueBuffer(buffer)
         return img
-
-
-    def get_last_frame(self, timeout_ms=1000):
-        buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-        indexes = []
-        buffers= self.data_stream.AnnouncedBuffers() #AnnouncedBuffers() includes buffers in various states (queued, filling, finished). The “max FrameID” buffer might not be finished 
-        for buf in self.data_stream.AnnouncedBuffers():
-            indexes.append(buf.FrameID())
-        ids_image = ids_peak_ipl_extension.BufferToImage(buffers[int(numpy.argmax(numpy.asarray(indexes)))])
-        img = numpy.copy(ids_image.get_numpy())
-        self.data_stream.QueueBuffer(buffer)
-        return img
-    
-    
-    def get_multiple_frames(self, nframes, timeout_ms=1000):
-        for _ in range(nframes):
-            buffer = self.data_stream.WaitForFinishedBuffer(timeout_ms)
-            img = numpy.copy(ids_peak_ipl_extension.BufferToImage(buffer).get_numpy())
-            self.data_stream.QueueBuffer(buffer)
-            yield img
-            
+                
 
     def set_external_trigger(self, line="Line0", activation="RisingEdge", exposure_mode="Timed"):
         nm = self.remote_nodemap
@@ -405,10 +404,14 @@ if __name__=="__main__":
 
     cam.get_acquisition_mode()
     cam.get_acquisition_mode()
+    cam.set_full_chip()
 
-    print(cam.set_active_region(16, 16, 128, 128))
+    cam.set_active_region(0, 1712, 512, 600)
 
-    print(cam.get_width())
+    cam.set_width(362)
+
+    cam.get_width()
+    cam.get_height()
 
     is_grabbing = cam.data_stream.NodeMaps()[0].FindNode("StreamIsGrabbing").Value() 
     print(is_grabbing)

@@ -14,8 +14,10 @@ class IdsHW(HardwareComponent):
         # create Settings (aka logged quantities)   
         self.model = self.settings.New(name='model', dtype=str)
         self.temperature = self.settings.New(name='temperature', dtype=float, ro=True, unit=chr(176)+'C' )
-        self.image_width = self.settings.New(name='image_width', dtype=int, ro=True,unit='px')
-        self.image_height = self.settings.New(name='image_height', dtype=int, ro=True,unit='px')
+        self.image_width = self.settings.New(name='image_width', dtype=int, ro=False,unit='px', reread_from_hardware_after_write=True)
+        self.image_height = self.settings.New(name='image_height', dtype=int, ro=False,unit='px', reread_from_hardware_after_write=True)
+        self.image_offsetx = self.settings.New(name='image_offsetx', dtype=int, ro=False, initial = 0, unit='px', reread_from_hardware_after_write=True)
+        self.image_offsety = self.settings.New(name='image_offsety', dtype=int, ro=False, initial = 0, unit='px', reread_from_hardware_after_write=True)
         self.bit_depth = self.settings.New(name='bit_depth', dtype=int,
                                                 choices=list(BitDepthChoices.keys()),
                                                 initial = 16, ro=False,
@@ -51,20 +53,35 @@ class IdsHW(HardwareComponent):
         
         # connect settings to Device methods
         self.model.hardware_read_func = self.camera_device.get_model
+        
         self.image_width.hardware_read_func = self.camera_device.get_width
         self.image_height.hardware_read_func = self.camera_device.get_height
+        self.image_offsetx.hardware_read_func = self.camera_device.get_offsetx
+        self.image_offsety.hardware_read_func = self.camera_device.get_offsety
+        
+        self.image_width.hardware_set_func = self.camera_device.set_width
+        self.image_height.hardware_set_func = self.camera_device.set_height
+        self.image_offsetx.hardware_set_func = self.camera_device.set_offsetx
+        self.image_offsety.hardware_set_func = self.camera_device.set_offsety
+
         self.bit_depth.hardware_set_func = self.camera_device.set_bit_depth
         self.bit_depth.hardware_read_func = self.camera_device.get_bit_depth
+        
         self.exposure_time.hardware_read_func = self.camera_device.get_exposure_ms
         self.exposure_time.hardware_set_func = self.camera_device.set_exposure_ms
+        
         self.frame_rate.hardware_read_func = self.camera_device.get_frame_rate
         self.frame_rate.hardware_set_func = self.camera_device.set_frame_rate
+        
         self.gain.hardware_set_func = self.camera_device.set_gain
         self.gain.hardware_read_func = self.camera_device.get_gain
+        
         self.debug_mode.hardware_read_func = self.camera_device.get_debug_mode
         self.debug_mode.hardware_set_func = self.camera_device.set_debug_mode
+        
         self.acquisition_mode.hardware_read_func = self.camera_device.get_acquisition_mode
         self.acquisition_mode.hardware_set_func = self.camera_device.set_acquisition_mode
+        
         self.stream_mode.hardware_read_func = self.camera_device.get_stream_mode
         self.stream_mode.hardware_set_func = self.camera_device.set_stream_mode
         
