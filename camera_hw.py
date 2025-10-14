@@ -26,7 +26,7 @@ class IdsHW(HardwareComponent):
                                       vmax = 1000., vmin = 1., spinbox_step = 1.,
                                       ro=False, reread_from_hardware_after_write=True)
         self.frame_rate = self.settings.New(name='frame_rate', initial= 9,
-                                            vmax = 1000., vmin = 0.01, spinbox_step = 0.1,
+                                            vmax = 10000., vmin = 0.01, spinbox_step = 0.1,
                                             unit = 'fps',dtype=float, ro=False, reread_from_hardware_after_write=True)
         self.exposure_time = self.settings.New(name='exposure_time', initial=100, vmax =5000.,
                                                vmin = 0.01, spinbox_step = 0.1,dtype=float, ro=False, unit='ms',

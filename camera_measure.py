@@ -31,6 +31,9 @@ class IdsMeasure(Measurement):
         self.frame_num = self.settings.New(name='frame_num',initial= 10, spinbox_step = 1,
                                            dtype=int, ro=False)  
         
+        self.settings.New(name='buffer_size',initial= 1000, spinbox_step = 1,
+                                           dtype=int, ro=False) 
+
         self.settings.New('zoom', dtype=int, initial=50, vmin=25, vmax=100)
         self.settings.New('rotate', dtype=bool, initial=True)     
         
@@ -132,7 +135,7 @@ class IdsMeasure(Measurement):
 
         self.frame_index = 0
         
-        self.camera.camera_device.start_acquisition()
+        self.camera.camera_device.start_acquisition(buffersize=self.settings.buffer_size.val)
 
         self.create_h5_file()
 
@@ -141,7 +144,8 @@ class IdsMeasure(Measurement):
         for frame_idx in range(frame_num):
         
             img = self.camera.camera_device.get_frame()
-
+            if self.camera.settings['debug_mode']:
+                print(self.camera.camera_device.frame_id)
             self.img = img
             
             self.frame_index = frame_idx
