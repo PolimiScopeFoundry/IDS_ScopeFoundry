@@ -309,7 +309,11 @@ class Camera:
 
         ids_image=ids_peak_ipl_extension.BufferToImage(buffer)
         img = numpy.copy(ids_image.get_numpy())
-        self.data_stream.QueueBuffer(buffer)
+        try:
+            self.data_stream.QueueBuffer(buffer)
+        except Exception as e:
+            if self.debug:
+                print(e)
         return img
                 
 
