@@ -2,8 +2,7 @@ from ids_peak import ids_peak
 from ids_peak import ids_peak_ipl_extension
 import warnings
 import numpy
-import nidaqmx
-from nidaqmx.constants import AcquisitionType, Level, TimeUnits
+
 BitDepthChoices = {	8: "Mono8",
                     10: "Mono10",
                     12: "Mono12",
