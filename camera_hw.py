@@ -8,7 +8,11 @@ from ScopeFoundry import HardwareComponent
 from ids_library import Camera, BitDepthChoices
 
 class IdsHW(HardwareComponent):
-    name = 'IDS'
+    
+    def __init__(self, app, name='IDS', cam_num=0):
+        self.name = name
+        self.cam_num = cam_num
+        super().__init__(app)
     
     def setup(self):
         # create Settings (aka logged quantities)   
@@ -45,11 +49,20 @@ class IdsHW(HardwareComponent):
                                                 initial = 'OldestFirst', ro=False)
                                              
         
+        self.trigger_source = self.settings.New(name='trigger_source', dtype=str,
+                                                choices=['Internal', 'External'],
+                                                initial='Internal', ro=False,
+                                                reread_from_hardware_after_write=True)
 
+        self.trigger_delay = self.settings.New(name='trigger_delay', dtype=float,
+                                                initial=0.1, vmin=0.1, vmax=500.0,
+                                                spinbox_step=0.1, spinbox_decimals=2,
+                                                unit='ms', ro=False,
+                                                reread_from_hardware_after_write=True)
     
     def connect(self):
         # create an instance of the Device
-        self.camera_device = Camera(debug=self.settings['debug_mode'])
+        self.camera_device = Camera(cam_num=self.cam_num, debug=self.settings['debug_mode'])
         
         # connect settings to Device methods
         self.model.hardware_read_func = self.camera_device.get_model
@@ -84,6 +97,11 @@ class IdsHW(HardwareComponent):
         
         self.stream_mode.hardware_read_func = self.camera_device.get_stream_mode
         self.stream_mode.hardware_set_func = self.camera_device.set_stream_mode
+
+        self.trigger_source.hardware_set_func = self.camera_device.set_trigger_source
+        self.trigger_source.hardware_read_func = self.camera_device.get_trigger_source
+        self.trigger_delay.hardware_set_func = self.camera_device.set_trigger_delay
+        self.trigger_delay.hardware_read_func = self.camera_device.get_trigger_delay
         
         self.read_from_hardware()
         
