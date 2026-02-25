@@ -100,8 +100,8 @@ class IdsHW(HardwareComponent):
 
         self.trigger_source.hardware_set_func = self.camera_device.set_trigger_source
         self.trigger_source.hardware_read_func = self.camera_device.get_trigger_source
-        self.trigger_delay.hardware_set_func = self.camera_device.set_trigger_delay
-        self.trigger_delay.hardware_read_func = self.camera_device.get_trigger_delay
+        #self.trigger_delay.hardware_set_func = self.camera_device.set_trigger_delay
+        #self.trigger_delay.hardware_read_func = self.camera_device.get_trigger_delay
         
         self.read_from_hardware()
         

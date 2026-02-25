@@ -323,115 +323,82 @@ class Camera:
     def set_external_trigger(self, line="Line0", activation="RisingEdge", exposure_mode="Timed"):
         nm = self.remote_nodemap
 
-        # Start frames on trigger events
         nm.FindNode("TriggerSelector").SetCurrentEntry("FrameStart")
-        nm.FindNode("TriggerMode").SetCurrentEntry(1)  # On
+        self._set_enum_node(nm.FindNode("TriggerMode"), "On")
 
-        # External line as source
         nm.FindNode("TriggerSource").SetCurrentEntry(line)
 
-        # Edge selection (if available on the model)
         try:
-            nm.FindNode("TriggerActivation").SetCurrentEntry(activation) # choices: RisingEdge, FallingEdge, AnyEdge, LevelHigh, LevelLow
+            nm.FindNode("TriggerActivation").SetCurrentEntry(activation)
         except Exception:
-            pass  # some models may not expose this; default is typically RisingEdge
+            pass
 
-        # Exposure behavior
         try:
             nm.FindNode("ExposureMode").SetCurrentEntry(exposure_mode)
         except Exception:
-            pass  # not all models support TriggerControlled (Uses one or more trigger signals to control the exposure)
+            pass
 
-        # Optional: zero trigger delay if present
         try:
             nm.FindNode("TriggerDelay").SetValue(0)
         except Exception:
             pass
 
+    def _set_enum_node(self, node, value):
+        """
+        Robust setter for IDS peak/GenICam enum nodes.
+        Works across different wrapper versions.
+        value can be entry name (str) or integer.
+        """
+        # try by string entry
+        if isinstance(value, str):
+            for fn in ("SetCurrentEntry", "SetSymbolic", "SetValue"):
+                if hasattr(node, fn):
+                    try:
+                        getattr(node, fn)(value)
+                        return
+                    except Exception:
+                        pass
+
+        # try by integer
+        if isinstance(value, (int, float)):
+            for fn in ("SetIntValue", "SetValue"):
+                if hasattr(node, fn):
+                    try:
+                        getattr(node, fn)(int(value))
+                        return
+                    except Exception:
+                        pass
+
+        raise AttributeError(f"Cannot set enum node with available methods. Node={node}, value={value}")
+
+    def enable_trigger(self):
+        self.set_external_trigger(line="Line0", activation="RisingEdge", exposure_mode="Timed")
+
 
     def disable_trigger(self):
         nm = self.remote_nodemap
-        nm.FindNode("TriggerSelector").SetCurrentEntry("FrameStart")
-        nm.FindNode("TriggerMode").SetValue(0)  # Off
+        node = nm.FindNode("TriggerMode")
+        self._set_enum_node(node, "Off")
 
     def set_trigger_source(self, source):
-        if source == 'External':
-            self.set_external_trigger(line="Line6", activation="RisingEdge")
-            print(f'Trigger source is set to External')
-        else:
+        source = str(source)
+        if source == "Internal":
             self.disable_trigger()
-            print(f'Trigger source is set to Internal')
+            return
+        if source == "External":
+            self.enable_trigger()
+            return
+        raise ValueError(f"Unknown trigger source: {source}")
+
 
     def get_trigger_source(self):
+        nm = self.remote_nodemap
         try:
-            nm = self.remote_nodemap
-            trigger_source = nm.FindNode("TriggerSource").CurrentEntry().SymbolicValue() # 1 for external
-            if trigger_source == 1:
-                return 'External'
-            else:
-                return 'Internal'
+            mode = nm.FindNode("TriggerMode").CurrentEntry().SymbolicValue()
+            return "External" if mode == "On" else "Internal"
+        except Exception:
+            return "Internal"
 
-        except Exception as e:
-            print(f'Error getting trigger source: {e}')
-
-    # New
-    def set_trigger_delay(self, delay_ms):
-        current_trigger_source = self.get_trigger_source()
-        
-
-        frame_rate = self.get_frame_rate()
-        period = 1 / frame_rate
-        low_time = delay_ms / 1000
-        high_time = 1e-3
-
-        if low_time + high_time > period:
-            raise ValueError(f'Delay {delay_ms}ms too large for frame rate {frame_rate}Hz')
-
-        try:
-            self._stop_trigger_task()
-
-            self._last_trigger_delay = delay_ms
-            self._current_frame_rate = frame_rate
-
-            self.trigger_task = nidaqmx.Task()
-            output_channel = 'Dev1/port0/line0'
-
-            sample_rate = 250000
-            samps_per_period = int(sample_rate * period)
-            low_time_samps_n = int(low_time * sample_rate)
-            high_time_samps_n = int(high_time * sample_rate)
-            remaining_samps = samps_per_period - low_time_samps_n - high_time_samps_n
-
-            trigger_sig = numpy.zeros(samps_per_period, dtype=bool)
-            trigger_sig[low_time_samps_n:low_time_samps_n + high_time_samps_n] = True
-
-            self.trigger_task.do_channels.add_do_chan(output_channel)
-
-            self.trigger_task.timing.cfg_samp_clk_timing(
-                rate=sample_rate,
-                sample_mode=AcquisitionType.CONTINUOUS,
-                samps_per_chan=len(trigger_sig)
-            )
-            self.trigger_task.out_stream.regen_mode = nidaqmx.constants.RegenerationMode.ALLOW_REGENERATION
-            self.trigger_task.write(trigger_sig, auto_start=True)
-            self._last_delay = delay_ms
-
-            print(f'Trigger source is set to External with delay: {delay_ms}')
-
-        except Exception as e:
-            print(f'Error setting trigger delay: {e}')
-            self._stop_trigger_task()
-
-    def _stop_trigger_task(self):
-        try:
-            self.trigger_task.write(False)
-            self.trigger_task.stop()
-            self.trigger_task.close()
-        except Exception as e:
-            print(f'Error stopping trigger task: {e}')
-
-    def get_trigger_delay(self):
-        return self._last_delay
 
     def close(self):
         try:
@@ -443,7 +410,12 @@ class Camera:
         except Exception:
             pass
 
-        self._stop_trigger_task()
+        if hasattr(self, "_stop_trigger_task"):
+            try:
+                self._stop_trigger_task()
+            except Exception:
+                pass
+
 
         try:
             ids_peak.Library.Close()
